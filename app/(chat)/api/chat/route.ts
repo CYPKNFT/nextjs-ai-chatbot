@@ -36,6 +36,7 @@ import { after } from 'next/server';
 import type { Chat } from '@/lib/db/schema';
 import { differenceInSeconds } from 'date-fns';
 import { ChatSDKError } from '@/lib/errors';
+import { DataStreamWriter } from 'ai';
 
 export const maxDuration = 60;
 
@@ -237,11 +238,9 @@ export async function POST(request: Request) {
     if (error instanceof ChatSDKError) {
       return error.toResponse();
     }
+    console.error('Unexpected error in chat POST:', error);
+    return new ChatSDKError('bad_request:api', String(error)).toResponse();
   }
-  // Log the error for debugging
-  console.error('Unexpected error in chat POST:', error);
-  // Always return a Response
-  return new ChatSDKError('bad_request:api', String(error)).toResponse();
 }
 
 export async function GET(request: Request) {
@@ -325,7 +324,7 @@ export async function GET(request: Request) {
     }
 
     const restoredStream = createDataStream({
-      execute: (buffer) => {
+      execute: (buffer: DataStreamWriter) => {
         buffer.writeData({
           type: 'append-message',
           message: JSON.stringify(mostRecentMessage),

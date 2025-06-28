@@ -238,6 +238,10 @@ export async function POST(request: Request) {
       return error.toResponse();
     }
   }
+  // Log the error for debugging
+  console.error('Unexpected error in chat POST:', error);
+  // Always return a Response
+  return new ChatSDKError('bad_request:api', String(error)).toResponse();
 }
 
 export async function GET(request: Request) {

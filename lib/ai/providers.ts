@@ -29,7 +29,7 @@ export const myProvider = isTestEnvironment
           middleware: extractReasoningMiddleware({ tagName: 'think' }),
         }),
         'title-model': xai('grok-3-mini-fast'),
-        'artifact-model': xai('grok-2-Image-1212'),
+        'artifact-model': xai('grok-3-mini-fast'),
       },
       imageModels: {
         'small-model': xai.image('grok-2-Image-1212'),

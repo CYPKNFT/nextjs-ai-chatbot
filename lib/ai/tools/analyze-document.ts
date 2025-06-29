@@ -11,10 +11,11 @@ export async function analyzeDocument(
   prompt: string = 'Summarize this document.',
 ): Promise<string> {
   const model = myProvider.languageModel('artifact-model');
-  const system = prompt;
-  const response = await model.call({
-    system,
-    prompt: text,
+  const response = await model.doGenerate({
+    prompt: [
+      { role: 'system', content: [{ type: 'text', text: prompt }] },
+      { role: 'user', content: [{ type: 'text', text }] },
+    ],
   });
   // If the response is an object, extract the text property; otherwise, return as is
   if (typeof response === 'object' && response.text) {

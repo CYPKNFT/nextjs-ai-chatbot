@@ -1,19 +1,26 @@
 import { put } from '@vercel/blob';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-
 import { auth } from '@/app/(auth)/auth';
+import { extractTextFromFile } from '@/lib/documents/parse';
 
-// Use Blob instead of File since File is not available in Node.js environment
+// Accept images and document types
+const ACCEPTED_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'application/pdf',
+  'text/plain',
+  'text/markdown',
+];
+
 const FileSchema = z.object({
   file: z
     .instanceof(Blob)
     .refine((file) => file.size <= 5 * 1024 * 1024, {
       message: 'File size should be less than 5MB',
     })
-    // Update the file type based on the kind of files you want to accept
-    .refine((file) => ['image/jpeg', 'image/png'].includes(file.type), {
-      message: 'File type should be JPEG or PNG',
+    .refine((file) => ACCEPTED_TYPES.includes(file.type), {
+      message: 'File type should be JPEG, PNG, PDF, TXT, or MD',
     }),
 });
 
@@ -53,11 +60,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: errorMessage }, { status: 400 });
     }
 
-    // Get filename from formData since Blob doesn't have name property
     const filename = (formData.get('file') as File).name;
     console.log('[UPLOAD] Filename:', filename);
     const fileBuffer = await file.arrayBuffer();
     console.log('[UPLOAD] File buffer length:', fileBuffer.byteLength);
+
+    let extractedText: string | undefined = undefined;
+    // Only extract text for document types
+    if (
+      ['application/pdf', 'text/plain', 'text/markdown'].includes(file.type) ||
+      /\.(pdf|txt|md)$/i.test(filename)
+    ) {
+      try {
+        extractedText = await extractTextFromFile(
+          Buffer.from(fileBuffer),
+          file.type,
+          filename,
+        );
+        console.log('[UPLOAD] Extracted text length:', extractedText.length);
+      } catch (err) {
+        console.log('[UPLOAD] Text extraction failed:', err);
+        // Optionally, you can return an error or just skip text extraction
+      }
+    }
 
     try {
       console.log('[UPLOAD] Uploading to Vercel Blob...');
@@ -65,7 +90,7 @@ export async function POST(request: Request) {
         access: 'public',
       });
       console.log('[UPLOAD] Upload successful:', data);
-      return NextResponse.json(data);
+      return NextResponse.json({ ...data, extractedText });
     } catch (error) {
       console.log('[UPLOAD] Upload failed:', error);
       return NextResponse.json({ error: 'Upload failed' }, { status: 500 });

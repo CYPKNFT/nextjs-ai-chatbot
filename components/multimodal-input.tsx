@@ -27,6 +27,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowDown } from 'lucide-react';
 import { useScrollToBottom } from '@/hooks/use-scroll-to-bottom';
 import type { VisibilityType } from './visibility-selector';
+import type { UploadApiResponse } from '@/lib/types';
 
 function PureMultimodalInput({
   chatId,
@@ -108,6 +109,12 @@ function PureMultimodalInput({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadQueue, setUploadQueue] = useState<Array<string>>([]);
+  const [extractedTexts, setExtractedTexts] = useState<Record<string, string>>(
+    {},
+  );
+  const [extracting, setExtracting] = useState<Record<string, boolean>>({});
+  const [extractError, setExtractError] = useState<Record<string, string>>({});
+  const [showFullText, setShowFullText] = useState<Record<string, boolean>>({});
 
   const submitForm = useCallback(() => {
     window.history.replaceState({}, '', `/chat/${chatId}`);
@@ -132,30 +139,43 @@ function PureMultimodalInput({
     chatId,
   ]);
 
-  const uploadFile = async (file: File) => {
+  const uploadFile = async (
+    file: File,
+  ): Promise<UploadApiResponse | undefined> => {
     const formData = new FormData();
     formData.append('file', file);
-
+    setExtracting((prev) => ({ ...prev, [file.name]: true }));
+    setExtractError((prev) => ({ ...prev, [file.name]: '' }));
     try {
       const response = await fetch('/api/files/upload', {
         method: 'POST',
         body: formData,
       });
-
       if (response.ok) {
-        const data = await response.json();
-        const { url, pathname, contentType } = data;
-
-        return {
-          url,
-          name: pathname,
-          contentType: contentType,
-        };
+        const data: UploadApiResponse = await response.json();
+        const { url, pathname, contentType, extractedText } = data;
+        if (extractedText) {
+          setExtractedTexts((prev) => ({
+            ...prev,
+            [pathname || file.name]: extractedText,
+          }));
+        }
+        return { url, pathname, contentType, extractedText };
       }
       const { error } = await response.json();
+      setExtractError((prev) => ({
+        ...prev,
+        [file.name]: error || 'Extraction failed',
+      }));
       toast.error(error);
     } catch (error) {
+      setExtractError((prev) => ({
+        ...prev,
+        [file.name]: 'Extraction failed',
+      }));
       toast.error('Failed to upload file, please try again!');
+    } finally {
+      setExtracting((prev) => ({ ...prev, [file.name]: false }));
     }
   };
 
@@ -237,6 +257,7 @@ function PureMultimodalInput({
         multiple
         onChange={handleFileChange}
         tabIndex={-1}
+        accept=".pdf,.txt,.md,image/*"
       />
 
       {(attachments.length > 0 || uploadQueue.length > 0) && (
@@ -244,9 +265,72 @@ function PureMultimodalInput({
           data-testid="attachments-preview"
           className="flex flex-row gap-2 overflow-x-scroll items-end"
         >
-          {attachments.map((attachment) => (
-            <PreviewAttachment key={attachment.url} attachment={attachment} />
-          ))}
+          {attachments.map((attachment) => {
+            const key = attachment.name || attachment.url || '';
+            const text = extractedTexts[key];
+            const isExtracting = extracting[key];
+            const errorMsg = extractError[key];
+            const isLong = text && text.length > 500;
+            const showFull = showFullText[key];
+            return (
+              <div key={attachment.url} className="flex flex-col items-start">
+                <PreviewAttachment attachment={attachment} />
+                {isExtracting && (
+                  <div className="mt-1 text-xs text-blue-500">
+                    Extracting text...
+                  </div>
+                )}
+                {errorMsg && (
+                  <div className="mt-1 text-xs text-red-500">{errorMsg}</div>
+                )}
+                {text && !isExtracting && !errorMsg && (
+                  <div className="mt-1 p-2 bg-zinc-100 dark:bg-zinc-800 rounded text-xs max-w-xs overflow-x-auto whitespace-pre-wrap">
+                    <strong>Extracted Text:</strong>
+                    <div>
+                      {isLong && !showFull ? (
+                        <>
+                          {text.slice(0, 500)}...{' '}
+                          <button
+                            className="text-blue-500 underline"
+                            type="button"
+                            onClick={() =>
+                              setShowFullText((prev) => ({
+                                ...prev,
+                                [key]: true,
+                              }))
+                            }
+                          >
+                            Show more
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          {text}
+                          {isLong && (
+                            <>
+                              {' '}
+                              <button
+                                className="text-blue-500 underline"
+                                type="button"
+                                onClick={() =>
+                                  setShowFullText((prev) => ({
+                                    ...prev,
+                                    [key]: false,
+                                  }))
+                                }
+                              >
+                                Show less
+                              </button>
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
           {uploadQueue.map((filename) => (
             <PreviewAttachment
